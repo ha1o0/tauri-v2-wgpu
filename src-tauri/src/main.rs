@@ -134,7 +134,7 @@ fn fs_main() -> @location(0) vec4<f32> {
                     // TODO: Request redraw on macos (not exposed in tauri yet).
                 }
                 RunEvent::MainEventsCleared => {
-                    println!("MainEventsCleared");
+                    // println!("MainEventsCleared");
 
                     let surface = app_handle.state::<wgpu::Surface>();
                     let render_pipeline = app_handle.state::<wgpu::RenderPipeline>();
@@ -156,7 +156,7 @@ fn fs_main() -> @location(0) vec4<f32> {
                                 view: &view,
                                 resolve_target: None,
                                 ops: wgpu::Operations {
-                                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                                    load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
                                     store: wgpu::StoreOp::Store,
                                 },
                             })],
