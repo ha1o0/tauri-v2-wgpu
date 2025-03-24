@@ -11,9 +11,22 @@ fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
+// 添加一个命令来控制渲染状态
+#[tauri::command]
+fn toggle_rendering(state: bool, app_handle: tauri::AppHandle) -> Result<(), String> {
+    let render_state = app_handle.state::<Mutex<bool>>();
+    let mut render_state = render_state.lock().map_err(|_| "无法获取渲染状态锁".to_string())?;
+    *render_state = state;
+    
+    Ok(())
+}
+
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
+            // 初始化渲染状态为 false（不渲染）
+            app.manage(Mutex::new(false));
+            
             let window = app.get_webview_window("main").unwrap();
             let size = window.inner_size()?;
 
@@ -112,7 +125,7 @@ fn fs_main() -> @location(0) vec4<f32> {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![greet])
+        .invoke_handler(tauri::generate_handler![greet, toggle_rendering])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
@@ -134,13 +147,15 @@ fn fs_main() -> @location(0) vec4<f32> {
                     // TODO: Request redraw on macos (not exposed in tauri yet).
                 }
                 RunEvent::MainEventsCleared => {
-                    // println!("MainEventsCleared");
-
+                    // 获取渲染状态
+                    let render_state = app_handle.state::<Mutex<bool>>();
+                    let render_state = render_state.lock().unwrap();
+                    
+                    // 无论是否渲染，都需要获取这些资源
                     let surface = app_handle.state::<wgpu::Surface>();
-                    let render_pipeline = app_handle.state::<wgpu::RenderPipeline>();
                     let device = app_handle.state::<wgpu::Device>();
                     let queue = app_handle.state::<wgpu::Queue>();
-
+                    
                     let frame = surface
                         .get_current_texture()
                         .expect("Failed to acquire next swap chain texture");
@@ -149,23 +164,47 @@ fn fs_main() -> @location(0) vec4<f32> {
                         .create_view(&wgpu::TextureViewDescriptor::default());
                     let mut encoder = device
                         .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-                    {
-                        let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                            label: None,
-                            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                                view: &view,
-                                resolve_target: None,
-                                ops: wgpu::Operations {
-                                    load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
-                                    store: wgpu::StoreOp::Store,
-                                },
-                            })],
-                            depth_stencil_attachment: None,
-                            timestamp_writes: None,
-                            occlusion_query_set: None,
-                        });
-                        rpass.set_pipeline(&render_pipeline);
-                        rpass.draw(0..3, 0..1);
+                    
+                    if *render_state {
+                        // 渲染红色三角形
+                        let render_pipeline = app_handle.state::<wgpu::RenderPipeline>();
+                        {
+                            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                                label: None,
+                                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                                    view: &view,
+                                    resolve_target: None,
+                                    ops: wgpu::Operations {
+                                        load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+                                        store: wgpu::StoreOp::Store,
+                                    },
+                                })],
+                                depth_stencil_attachment: None,
+                                timestamp_writes: None,
+                                occlusion_query_set: None,
+                            });
+                            rpass.set_pipeline(&render_pipeline);
+                            rpass.draw(0..3, 0..1);
+                        }
+                    } else {
+                        // 只清除屏幕，不渲染三角形
+                        {
+                            let _rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                                label: None,
+                                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                                    view: &view,
+                                    resolve_target: None,
+                                    ops: wgpu::Operations {
+                                        load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+                                        store: wgpu::StoreOp::Store,
+                                    },
+                                })],
+                                depth_stencil_attachment: None,
+                                timestamp_writes: None,
+                                occlusion_query_set: None,
+                            });
+                            // 不需要设置管线和绘制，只需要清屏
+                        }
                     }
 
                     queue.submit(Some(encoder.finish()));

@@ -4,6 +4,8 @@ import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 let greetInputEl: HTMLInputElement | null;
 let greetMsgEl: HTMLElement | null;
 let newWindowButtonEl: HTMLElement | null;
+let renderWgpuButtonEl: HTMLElement | null;
+let cancelRenderWgpuButtonEl: HTMLElement | null;
 
 async function greet() {
   if (greetMsgEl && greetInputEl) {
@@ -34,14 +36,25 @@ async function openNewWindow() {
   });
 }
 
+async function renderWgpu(state: boolean = true) {
+  const result = await invoke("toggle_rendering", {
+    state
+  });
+  console.log(result);
+}
+
 window.addEventListener("DOMContentLoaded", () => {
   greetInputEl = document.querySelector("#greet-input");
   greetMsgEl = document.querySelector("#greet-msg");
   newWindowButtonEl = document.querySelector("#new-window-button");
+  renderWgpuButtonEl = document.querySelector("#render-wgpu-button");
+  cancelRenderWgpuButtonEl = document.querySelector("#cancel-render-wgpu-button");
   
   document.querySelector("#greet-button")?.addEventListener("click", () => greet());
   
   newWindowButtonEl?.addEventListener("click", () => openNewWindow());
+  renderWgpuButtonEl?.addEventListener("click", () => renderWgpu(true));
+  cancelRenderWgpuButtonEl?.addEventListener("click", () => renderWgpu(false));
   
   greetInputEl?.addEventListener("keypress", (e) => {
     if (e.key === "Enter") {
