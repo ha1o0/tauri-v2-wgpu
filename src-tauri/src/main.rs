@@ -26,6 +26,10 @@ fn toggle_rendering(state: bool, app_handle: tauri::AppHandle) -> Result<(), Str
     Ok(())
 }
 
+mod renderer;
+
+use renderer::Renderer;
+
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
@@ -121,102 +125,32 @@ fn fs_main() -> @location(0) vec4<f32> {
             };
 
             surface.configure(&device, &config);
-
-            app.manage(surface);
-            app.manage(render_pipeline);
-            app.manage(device);
-            app.manage(queue);
-            app.manage(Mutex::new(config));
+            let renderer = Renderer::new(surface, device, queue, render_pipeline, config);
+            app.manage(renderer);
 
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![greet, toggle_rendering])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|app_handle, event| {
-            match event {
-                RunEvent::WindowEvent {
-                    label: _,
-                    event: WindowEvent::Resized(size),
-                    ..
-                } => {
-                    let config = app_handle.state::<Mutex<wgpu::SurfaceConfiguration>>();
-                    let surface = app_handle.state::<wgpu::Surface>();
-                    let device = app_handle.state::<wgpu::Device>();
-
-                    let mut config = config.lock().unwrap();
-                    config.width = if size.width > 0 { size.width } else { 1 };
-                    config.height = if size.height > 0 { size.height } else { 1 };
-                    surface.configure(&device, &config)
-
-                    // TODO: Request redraw on macos (not exposed in tauri yet).
-                }
-                RunEvent::MainEventsCleared => {
-                    // 获取渲染状态
-                    let render_state = app_handle.state::<Mutex<bool>>();
-                    let render_state = render_state.lock().unwrap();
-
-                    // 无论是否渲染，都需要获取这些资源
-                    let surface = app_handle.state::<wgpu::Surface>();
-                    let device = app_handle.state::<wgpu::Device>();
-                    let queue = app_handle.state::<wgpu::Queue>();
-
-                    let frame = surface
-                        .get_current_texture()
-                        .expect("Failed to acquire next swap chain texture");
-                    let view = frame
-                        .texture
-                        .create_view(&wgpu::TextureViewDescriptor::default());
-                    let mut encoder = device
-                        .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-
-                    if *render_state {
-                        // 渲染红色三角形
-                        let render_pipeline = app_handle.state::<wgpu::RenderPipeline>();
-                        {
-                            let mut rpass =
-                                encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                                    label: None,
-                                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                                        view: &view,
-                                        resolve_target: None,
-                                        ops: wgpu::Operations {
-                                            load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
-                                            store: wgpu::StoreOp::Store,
-                                        },
-                                    })],
-                                    depth_stencil_attachment: None,
-                                    timestamp_writes: None,
-                                    occlusion_query_set: None,
-                                });
-                            rpass.set_pipeline(&render_pipeline);
-                            rpass.draw(0..3, 0..1);
-                        }
-                    } else {
-                        // 只清除屏幕，不渲染三角形
-                        {
-                            let _rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                                label: None,
-                                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                                    view: &view,
-                                    resolve_target: None,
-                                    ops: wgpu::Operations {
-                                        load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
-                                        store: wgpu::StoreOp::Store,
-                                    },
-                                })],
-                                depth_stencil_attachment: None,
-                                timestamp_writes: None,
-                                occlusion_query_set: None,
-                            });
-                            // 不需要设置管线和绘制，只需要清屏
-                        }
-                    }
-
-                    queue.submit(Some(encoder.finish()));
-                    frame.present();
-                }
-                _ => (),
+        .run(|app_handle, event| match event {
+            RunEvent::WindowEvent {
+                label: _,
+                event: WindowEvent::Resized(size),
+                ..
+            } => {
+                let renderer = app_handle.state::<Renderer>();
+                renderer.resize(
+                    if size.width > 0 { size.width } else { 1 },
+                    if size.height > 0 { size.height } else { 1 },
+                );
             }
+            RunEvent::MainEventsCleared => {
+                let render_state = app_handle.state::<Mutex<bool>>();
+                let render_state = render_state.lock().unwrap();
+                let renderer = app_handle.state::<Renderer>();
+                renderer.render(*render_state);
+            }
+            _ => (),
         });
 }
