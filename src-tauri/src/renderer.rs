@@ -1,6 +1,5 @@
-use wgpu;
-use tauri::Manager;
 use std::sync::Mutex;
+use wgpu;
 
 pub struct Renderer<'a> {
     surface: wgpu::Surface<'a>,
