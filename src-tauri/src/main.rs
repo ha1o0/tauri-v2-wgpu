@@ -56,9 +56,9 @@ fn main() {
                     &wgpu::DeviceDescriptor {
                         label: None,
                         required_features: wgpu::Features::empty(),
-                        // Make sure we use the texture resolution limits from the adapter, so we can support images the size of the swapchain.
                         required_limits: wgpu::Limits::downlevel_webgl2_defaults()
                             .using_resolution(adapter.limits()),
+                        memory_hints: Default::default(), // 新增字段
                     },
                     None,
                 ),
@@ -99,18 +99,21 @@ fn fs_main() -> @location(0) vec4<f32> {
                 layout: Some(&pipeline_layout),
                 vertex: wgpu::VertexState {
                     module: &shader,
-                    entry_point: "vs_main",
+                    entry_point: Some("vs_main"), // 改为 Option
                     buffers: &[],
+                    compilation_options: Default::default(), // 新增字段
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
-                    entry_point: "fs_main",
+                    entry_point: Some("fs_main"), // 改为 Option
                     targets: &[Some(swapchain_format.into())],
+                    compilation_options: Default::default(), // 新增字段
                 }),
                 primitive: wgpu::PrimitiveState::default(),
                 depth_stencil: None,
                 multisample: wgpu::MultisampleState::default(),
                 multiview: None,
+                cache: None, // 新增字段
             });
 
             let config = wgpu::SurfaceConfiguration {
