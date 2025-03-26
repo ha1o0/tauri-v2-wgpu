@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 
 let greetInputEl: HTMLInputElement | null;
 let greetMsgEl: HTMLElement | null;
@@ -17,19 +18,24 @@ async function greet() {
 }
 
 async function openNewWindow() {
+  const windowLabel = 'second-window';
   // 创建一个新窗口
-  const webview = new WebviewWindow('second-window', {
+  const webview = new WebviewWindow(windowLabel, {
     url: 'index.html',
     title: '新窗口',
     width: 800,
     height: 600,
   });
-  
+
   // 监听窗口创建事件
-  webview.once('tauri://created', () => {
+  webview.once('tauri://created', async () => {
     console.log('窗口已创建');
+    const result = await invoke("init_window_wgpu", {
+      windowLabel
+    });
+    console.log(result);
   });
-  
+
   // 监听窗口错误事件
   webview.once('tauri://error', (e: any) => {
     console.error('窗口创建错误:', e);
@@ -37,7 +43,9 @@ async function openNewWindow() {
 }
 
 async function renderWgpu(state: boolean = true) {
+  const cw = getCurrentWindow();
   const result = await invoke("toggle_rendering", {
+    windowLabel: cw.label,
     state
   });
   console.log(result);
@@ -49,13 +57,13 @@ window.addEventListener("DOMContentLoaded", () => {
   newWindowButtonEl = document.querySelector("#new-window-button");
   renderWgpuButtonEl = document.querySelector("#render-wgpu-button");
   cancelRenderWgpuButtonEl = document.querySelector("#cancel-render-wgpu-button");
-  
+
   document.querySelector("#greet-button")?.addEventListener("click", () => greet());
-  
+
   newWindowButtonEl?.addEventListener("click", () => openNewWindow());
   renderWgpuButtonEl?.addEventListener("click", () => renderWgpu(true));
   cancelRenderWgpuButtonEl?.addEventListener("click", () => renderWgpu(false));
-  
+
   greetInputEl?.addEventListener("keypress", (e) => {
     if (e.key === "Enter") {
       greet();

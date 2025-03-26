@@ -1,9 +1,9 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::{borrow::Cow, sync::Mutex};
+use std::{borrow::Cow, collections::HashMap, sync::Mutex};
 
-use tauri::{async_runtime::block_on, Manager, RunEvent, WindowEvent};
+use tauri::{async_runtime::block_on, Manager, RunEvent, State, WebviewWindowBuilder, WindowEvent};
 
 // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
 #[tauri::command]
@@ -11,33 +11,24 @@ fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
-// 添加一个命令来控制渲染状态
-#[tauri::command]
-fn toggle_rendering(state: bool, app_handle: tauri::AppHandle) -> Result<(), String> {
-    let render_state = app_handle.state::<Mutex<bool>>();
-    let mut render_state = render_state
-        .lock()
-        .map_err(|_| "无法获取渲染状态锁".to_string())?;
-    *render_state = state;
-    if let Some(window) = app_handle.get_webview_window("main") {
-        window.reload().expect("Failed to reload window");
-    }
-
-    Ok(())
+struct AppState {
+    // 使用窗口标签作为key的渲染器映射
+    window_renderers: Mutex<HashMap<String, Renderer<'static>>>,
 }
 
-mod renderer;
-
-use renderer::Renderer;
-
-fn main() {
-    tauri::Builder::default()
-        .setup(|app| {
+#[tauri::command]
+async fn init_window_wgpu(app: tauri::AppHandle, window_label: String) -> Result<(), String> {
+    println!("Initializing window {}", window_label);
+    app.clone()
+        .run_on_main_thread(move || {
             // 初始化渲染状态为 false（不渲染）
-            app.manage(Mutex::new(false));
-
-            let window = app.get_webview_window("main").unwrap();
-            let size = window.inner_size()?;
+            // app.manage(Mutex::new(false));
+            // println!("Initializing window {}", window_label);
+            println!("1111");
+            let window = app.get_webview_window(&window_label).unwrap();
+            // println!("window: {:?}", window);
+            let size = window.inner_size().unwrap();
+            println!("size: {:?}", size);
 
             let instance = wgpu::Instance::default();
 
@@ -49,7 +40,7 @@ fn main() {
                 compatible_surface: Some(&surface),
             }))
             .expect("Failed to find an appropriate adapter");
-
+            println!("2222");
             // Create the logical device and command queue
             let (device, queue) = block_on(
                 adapter.request_device(
@@ -72,14 +63,14 @@ fn main() {
                     r#"
 @vertex
 fn vs_main(@builtin(vertex_index) in_vertex_index: u32) -> @builtin(position) vec4<f32> {
-    let x = f32(i32(in_vertex_index) - 1);
-    let y = f32(i32(in_vertex_index & 1u) * 2 - 1);
-    return vec4<f32>(x, y, 0.0, 1.0);
+let x = f32(i32(in_vertex_index) - 1);
+let y = f32(i32(in_vertex_index & 1u) * 2 - 1);
+return vec4<f32>(x, y, 0.0, 1.0);
 }
 
 @fragment
 fn fs_main() -> @location(0) vec4<f32> {
-    return vec4<f32>(1.0, 0.0, 0.0, 1.0);
+return vec4<f32>(1.0, 0.0, 0.0, 1.0);
 }
 "#,
                 )),
@@ -128,12 +119,65 @@ fn fs_main() -> @location(0) vec4<f32> {
             };
 
             surface.configure(&device, &config);
-            let renderer = Renderer::new(surface, device, queue, render_pipeline, config);
-            app.manage(renderer);
+            println!("3333");
+            let app_state = app.state::<AppState>();
+            app_state.window_renderers.lock().unwrap().insert(
+                window_label,
+                Renderer::new(surface, device, queue, render_pipeline, config),
+            );
+            println!("4444");
+            ()
+        })
+        .map_err(|e| e.to_string())
+}
 
+// 添加一个命令来控制渲染状态
+#[tauri::command]
+fn toggle_rendering(
+    window_label: String,
+    state: bool,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    println!(
+        "Toggling rendering for window {}, state: {}",
+        window_label, state
+    );
+    let app_state = app_handle.state::<AppState>();
+    // 找到对应的渲染器并更新状态
+    if let Some(renderer) = app_state
+        .window_renderers
+        .lock()
+        .unwrap()
+        .get_mut(&window_label)
+    {
+        println!("5555");
+        renderer.render(state);
+        if let Some(window) = app_handle.get_webview_window(&window_label) {
+            println!("6666");
+            window.reload().expect("Failed to reload window");
+        }
+    }
+    Ok(())
+}
+
+mod renderer;
+
+use renderer::Renderer;
+
+fn main() {
+    tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            toggle_rendering,
+            init_window_wgpu
+        ])
+        .setup(|app| {
+            // 管理AppState
+            app.manage(AppState {
+                window_renderers: Mutex::new(HashMap::new()),
+            });
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![greet, toggle_rendering])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| match event {
@@ -142,17 +186,19 @@ fn fs_main() -> @location(0) vec4<f32> {
                 event: WindowEvent::Resized(size),
                 ..
             } => {
-                let renderer = app_handle.state::<Renderer>();
-                renderer.resize(
-                    if size.width > 0 { size.width } else { 1 },
-                    if size.height > 0 { size.height } else { 1 },
-                );
+                let app_state = app_handle.state::<AppState>();
+                for (_, renderer) in app_state.window_renderers.lock().unwrap().iter() {
+                    renderer.resize(
+                        if size.width > 0 { size.width } else { 1 },
+                        if size.height > 0 { size.height } else { 1 },
+                    );
+                }
             }
             RunEvent::MainEventsCleared => {
-                let render_state = app_handle.state::<Mutex<bool>>();
-                let render_state = render_state.lock().unwrap();
-                let renderer = app_handle.state::<Renderer>();
-                renderer.render(*render_state);
+                let app_state = app_handle.state::<AppState>();
+                for (_, renderer) in app_state.window_renderers.lock().unwrap().iter() {
+                    renderer.render(true);
+                }
             }
             _ => (),
         });
