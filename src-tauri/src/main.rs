@@ -70,7 +70,7 @@ return vec4<f32>(x, y, 0.0, 1.0);
 
 @fragment
 fn fs_main() -> @location(0) vec4<f32> {
-return vec4<f32>(1.0, 0.0, 0.0, 1.0);
+return vec4<f32>(0.0, 0.0, 1.0, 1.0);  // 修改为蓝色，与 renderer.rs 保持一致
 }
 "#,
                 )),
@@ -196,7 +196,8 @@ fn main() {
             }
             RunEvent::MainEventsCleared => {
                 let app_state = app_handle.state::<AppState>();
-                for (_, renderer) in app_state.window_renderers.lock().unwrap().iter() {
+                for (window_label, renderer) in app_state.window_renderers.lock().unwrap().iter() {
+                    println!("777 Rendering window {}", window_label);
                     renderer.render(true);
                 }
             }

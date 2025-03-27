@@ -22,14 +22,14 @@ async function openNewWindow() {
   // 创建一个新窗口
   const webview = new WebviewWindow(windowLabel, {
     url: 'index.html',
-    title: '新窗口',
+    title: 'second window',
     width: 800,
     height: 600,
   });
 
   // 监听窗口创建事件
   webview.once('tauri://created', async () => {
-    console.log('窗口已创建');
+    console.log('window created');
     const result = await invoke("init_window_wgpu", {
       windowLabel
     });
@@ -38,7 +38,7 @@ async function openNewWindow() {
 
   // 监听窗口错误事件
   webview.once('tauri://error', (e: any) => {
-    console.error('窗口创建错误:', e);
+    console.error('window created error:', e);
   });
 }
 
