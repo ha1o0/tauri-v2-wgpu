@@ -3,7 +3,10 @@
 
 use std::{borrow::Cow, collections::HashMap, sync::Mutex};
 
-use tauri::{async_runtime::block_on, Manager, RunEvent, State, WebviewWindowBuilder, WindowEvent};
+use tauri::{
+    async_runtime::{self, block_on},
+    Manager, RunEvent, State, WebviewWindowBuilder, WindowEvent,
+};
 
 // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
 #[tauri::command]
@@ -19,48 +22,47 @@ struct AppState {
 #[tauri::command]
 async fn init_window_wgpu(app: tauri::AppHandle, window_label: String) -> Result<(), String> {
     println!("Initializing window {}", window_label);
-    app.clone()
-        .run_on_main_thread(move || {
-            // 初始化渲染状态为 false（不渲染）
-            // app.manage(Mutex::new(false));
-            // println!("Initializing window {}", window_label);
-            println!("1111");
-            let window = app.get_webview_window(&window_label).unwrap();
-            // println!("window: {:?}", window);
-            let size = window.inner_size().unwrap();
-            println!("size: {:?}", size);
+    // 初始化渲染状态为 false（不渲染）
+    // app.manage(Mutex::new(false));
+    // println!("Initializing window {}", window_label);
+    println!("1111");
+    let window = app.get_webview_window(&window_label).unwrap();
+    // println!("window: {:?}", window);
+    let size = window.inner_size().unwrap();
+    println!("size: {:?}", size);
 
-            let instance = wgpu::Instance::default();
+    let instance = wgpu::Instance::default();
 
-            let surface = instance.create_surface(window).unwrap();
-            let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::default(),
-                force_fallback_adapter: false,
-                // Request an adapter which can render to our surface
-                compatible_surface: Some(&surface),
-            }))
-            .expect("Failed to find an appropriate adapter");
-            println!("2222");
-            // Create the logical device and command queue
-            let (device, queue) = block_on(
-                adapter.request_device(
-                    &wgpu::DeviceDescriptor {
-                        label: None,
-                        required_features: wgpu::Features::empty(),
-                        required_limits: wgpu::Limits::downlevel_webgl2_defaults()
-                            .using_resolution(adapter.limits()),
-                        memory_hints: Default::default(), // 新增字段
-                    },
-                    None,
-                ),
-            )
-            .expect("Failed to create device");
+    let surface = instance.create_surface(window).unwrap();
+    // 使用 .await 而不是 block_on
+    let adapter = instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::default(),
+        force_fallback_adapter: false,
+        compatible_surface: Some(&surface),
+    })
+    .await
+    .expect("Failed to find an appropriate adapter");
+    
+    println!("2222");
+    // 使用 .await 而不是 block_on
+    let (device, queue) = adapter.request_device(
+        &wgpu::DeviceDescriptor {
+            label: None,
+            required_features: wgpu::Features::empty(),
+            required_limits:
+                wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits()),
+            memory_hints: Default::default(),
+        },
+        None,
+    )
+    .await
+    .expect("Failed to create device");
 
-            // Load the shaders from disk
-            let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: None,
-                source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(
-                    r#"
+    // Load the shaders from disk
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: None,
+        source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(
+            r#"
 @vertex
 fn vs_main(@builtin(vertex_index) in_vertex_index: u32) -> @builtin(position) vec4<f32> {
 let x = f32(i32(in_vertex_index) - 1);
@@ -73,62 +75,60 @@ fn fs_main() -> @location(0) vec4<f32> {
 return vec4<f32>(0.0, 0.0, 1.0, 1.0);  // 修改为蓝色，与 renderer.rs 保持一致
 }
 "#,
-                )),
-            });
+        )),
+    });
 
-            let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: None,
-                bind_group_layouts: &[],
-                push_constant_ranges: &[],
-            });
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: None,
+        bind_group_layouts: &[],
+        push_constant_ranges: &[],
+    });
 
-            let swapchain_capabilities = surface.get_capabilities(&adapter);
-            let swapchain_format = swapchain_capabilities.formats[0];
+    let swapchain_capabilities = surface.get_capabilities(&adapter);
+    let swapchain_format = swapchain_capabilities.formats[0];
 
-            let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: None,
-                layout: Some(&pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &shader,
-                    entry_point: Some("vs_main"), // 改为 Option
-                    buffers: &[],
-                    compilation_options: Default::default(), // 新增字段
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &shader,
-                    entry_point: Some("fs_main"), // 改为 Option
-                    targets: &[Some(swapchain_format.into())],
-                    compilation_options: Default::default(), // 新增字段
-                }),
-                primitive: wgpu::PrimitiveState::default(),
-                depth_stencil: None,
-                multisample: wgpu::MultisampleState::default(),
-                multiview: None,
-                cache: None, // 新增字段
-            });
+    let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: None,
+        layout: Some(&pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: &shader,
+            entry_point: Some("vs_main"), // 改为 Option
+            buffers: &[],
+            compilation_options: Default::default(), // 新增字段
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: Some("fs_main"), // 改为 Option
+            targets: &[Some(swapchain_format.into())],
+            compilation_options: Default::default(), // 新增字段
+        }),
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        multiview: None,
+        cache: None, // 新增字段
+    });
 
-            let config = wgpu::SurfaceConfiguration {
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                format: swapchain_format,
-                width: size.width,
-                height: size.height,
-                present_mode: wgpu::PresentMode::Fifo,
-                alpha_mode: swapchain_capabilities.alpha_modes[0],
-                view_formats: vec![],
-                desired_maximum_frame_latency: 2,
-            };
+    let config = wgpu::SurfaceConfiguration {
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        format: swapchain_format,
+        width: size.width,
+        height: size.height,
+        present_mode: wgpu::PresentMode::Fifo,
+        alpha_mode: swapchain_capabilities.alpha_modes[0],
+        view_formats: vec![],
+        desired_maximum_frame_latency: 2,
+    };
 
-            surface.configure(&device, &config);
-            println!("3333");
-            let app_state = app.state::<AppState>();
-            app_state.window_renderers.lock().unwrap().insert(
-                window_label,
-                Renderer::new(surface, device, queue, render_pipeline, config),
-            );
-            println!("4444");
-            ()
-        })
-        .map_err(|e| e.to_string())
+    surface.configure(&device, &config);
+    println!("3333");
+    let app_state = app.state::<AppState>();
+    app_state.window_renderers.lock().unwrap().insert(
+        window_label,
+        Renderer::new(surface, device, queue, render_pipeline, config),
+    );
+    println!("4444");
+    Ok(())
 }
 
 // 添加一个命令来控制渲染状态
@@ -194,13 +194,13 @@ fn main() {
                     );
                 }
             }
-            RunEvent::MainEventsCleared => {
-                let app_state = app_handle.state::<AppState>();
-                for (window_label, renderer) in app_state.window_renderers.lock().unwrap().iter() {
-                    println!("777 Rendering window {}", window_label);
-                    renderer.render(true);
-                }
-            }
+            // RunEvent::MainEventsCleared => {
+            //     let app_state = app_handle.state::<AppState>();
+            //     for (window_label, renderer) in app_state.window_renderers.lock().unwrap().iter() {
+            //         println!("777 Rendering window {}", window_label);
+            //         renderer.render(true);
+            //     }
+            // }
             _ => (),
         });
 }
